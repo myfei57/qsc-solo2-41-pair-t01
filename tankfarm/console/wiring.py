@@ -265,6 +265,7 @@ class Services:
             return None
         self.projection = StateProjection.from_snapshot(checkpoint.state)
         self.watermark.advance_to(checkpoint.watermark)
+        self.tombstones.rebuild(self.stream.records(), checkpoint.watermark)
         result = replay(
             self.stream,
             self.commits,

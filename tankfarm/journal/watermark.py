@@ -20,7 +20,3 @@ class Watermark:
             raise WatermarkRegressionError(self._value, candidate)
         self._value = candidate
         return self._value
-
-    def retreat_to(self, seq: int) -> int:
-        self._value = max(0, int(seq))
-        return self._value

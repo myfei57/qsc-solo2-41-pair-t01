@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Iterable
 
 from tankfarm.errors import (
     DuplicateTombstoneError,
@@ -36,6 +36,15 @@ class TombstoneIndex:
     def targets(self) -> tuple[int, ...]:
         return tuple(sorted(self._targets))
 
+    def rebuild(self, records: Iterable[Record], watermark: int) -> None:
+        """Marks the targets of every committed tombstone after a restart."""
+
+        for record in records:
+            if record.seq > watermark:
+                break
+            if record.kind == TOMBSTONE_KIND:
+                self.mark(int(record.payload["target_seq"]))
+
 
 class RollbackService:
     """Rolls a committed record back without rewriting history."""
@@ -48,12 +57,20 @@ class RollbackService:
         self._index = index
 
     def rollback(self, seq: int, reason: str) -> Record:
-        self._journal.stream.get(seq)
+        target = self._journal.stream.get(seq)
         if not self._commits.is_committed(seq):
             raise UncommittedRecordError(seq)
+        if target.kind == TOMBSTONE_KIND:
+            raise RollbackTargetError(seq)
         if not self._index.mark(seq):
             raise DuplicateTombstoneError(seq)
-        removed = self._journal.stream.remove(seq)
-        self._journal.repository.rewrite_records(self._journal.stream.records())
-        self._commits.retreat_to(self._journal.stream.head())
-        return removed
+        tombstone = self._journal.append(
+            TOMBSTONE_KIND,
+            {
+                "target_seq": target.seq,
+                "target_id": target.record_id,
+                "reason": reason,
+            },
+        )
+        self._commits.commit()
+        return tombstone
