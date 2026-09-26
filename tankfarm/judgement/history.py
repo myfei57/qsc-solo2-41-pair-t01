@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from tankfarm.event import topics
+from tankfarm.journal import TOMBSTONE_KIND
 from tankfarm.journal.record import Record
 from tankfarm.sequence.stages import (
     FACT_NEW_TANK_OPEN,
@@ -53,6 +54,8 @@ class StateProjection:
     def apply(self, record: Record) -> None:
         kind = record.kind
         payload = record.payload
+        if kind == TOMBSTONE_KIND:
+            return
         if kind == topics.VALVE_POSITION:
             valve_id = str(payload["valve_id"])
             self.valve_positions[valve_id] = str(payload["position"])

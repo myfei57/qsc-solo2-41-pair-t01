@@ -259,17 +259,33 @@ class Services:
         self.stream.load(records)
         checkpoint = self.repository.load_checkpoint()
         if checkpoint is None:
+            self.tombstones = TombstoneIndex.from_records(records)
+            self.rollbacks = RollbackService(self.journal, self.commits, self.tombstones)
             self.projection = self.project(0)
             self._apply_projection()
             self.auditor.restore()
             return None
-        self.projection = StateProjection.from_snapshot(checkpoint.state)
+
         self.watermark.advance_to(checkpoint.watermark)
+        checkpoint_tombstones = {
+            int(record.payload["target_seq"])
+            for record in records
+            if record.seq <= checkpoint.watermark
+            and record.kind == TOMBSTONE_KIND
+        }
+        self.tombstones = TombstoneIndex.from_records(records, checkpoint.watermark)
+        self.rollbacks = RollbackService(self.journal, self.commits, self.tombstones)
+        if checkpoint_tombstones:
+            self.projection = StateProjection()
+            since = 0
+        else:
+            self.projection = StateProjection.from_snapshot(checkpoint.state)
+            since = checkpoint.watermark
         result = replay(
             self.stream,
             self.commits,
             self.tombstones,
-            checkpoint.watermark,
+            since,
             self.projection.apply,
         )
         self._apply_projection()

@@ -45,6 +45,7 @@ def build_state(services: "Services") -> dict[str, Any]:
             "committed": len(services.commits.committed()),
             "pending": len(services.commits.pending()),
             "visible": len(services.visible_records()),
+            "tombstones": list(services.tombstones.targets()),
         },
         "sheets": [sheet.as_payload() for sheet in services.sheets.open_sheets()],
         "latest_snapshot": _snapshot_payload(services),

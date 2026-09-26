@@ -77,6 +77,24 @@ def test_restart_ignores_rolled_back_records(services, restart):
     assert fresh.valves.position(VALVE_TANK_NEW) == POSITION_CLOSED
 
 
+def test_rollback_survives_restart_without_renumbering_history(services, restart):
+    services.open_valve(VALVE_TANK_NEW)
+    services.open_valve(VALVE_VENT)
+    bad_seq = services.select_records(RecordFilter(subject=VALVE_TANK_NEW))[-1].seq
+
+    services.rollback(bad_seq, "mistaken valve action")
+    sequences_before = [record.seq for record in services.stream.records()]
+    tombstone_seq = services.stream.head()
+
+    fresh = restart()
+    assert [record.seq for record in fresh.stream.records()] == sequences_before
+    assert fresh.stream.get(bad_seq).kind == services.stream.get(bad_seq).kind
+    assert fresh.tombstones.targets() == (bad_seq,)
+    assert fresh.stream.get(tombstone_seq).kind == "journal.tombstone"
+    assert fresh.valves.position(VALVE_TANK_NEW) == POSITION_CLOSED
+    assert fresh.valves.position(VALVE_VENT) == POSITION_OPEN
+
+
 def test_restart_restores_the_config_revision(services, restart):
     services.revise_config({"high_limit_mm": 8800.0})
     fresh = restart()
